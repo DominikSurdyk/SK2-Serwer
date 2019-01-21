@@ -23,7 +23,6 @@ struct pollfd fileDescriptorsArray[MAX_FDS];
 int numberOfFileDescriptors = 1;
 
 
-
 bool acceptNewConnection(int nSocket) {
     int newConnection = accept(nSocket, NULL, NULL);
     if (newConnection < 0) {
@@ -41,7 +40,8 @@ bool acceptNewConnection(int nSocket) {
 
 int main(int argc, char *argv[]) {
     printf("Program start\n");
-
+    bool closeConnection = false;
+    bool compressArray = false;
 
     int current_size = 0, listen_sd = -1;
 
@@ -83,6 +83,7 @@ int main(int argc, char *argv[]) {
 
     fileDescriptorsArray[0].fd = nSocket;
     fileDescriptorsArray[0].events = POLLIN;
+
     /* Nawiązywanie nowych połączeń, oraz obsługa pozostałych*/
     while (true) {
         //printf("new loop\n");
@@ -94,82 +95,122 @@ int main(int argc, char *argv[]) {
         }
 
         if (rc == 0) {
-            //printf("poll() timed out. There are no neww connections.\n");
+           // printf("poll() timed out. There are no neww connections.\n");
             continue;
-        }
+        } else {
 
-        /*akceptowanie nowych połączeń*/
-        if (fileDescriptorsArray[0].revents & POLLIN) {
-            acceptNewConnection(nSocket);
-        }
 
-        for (int i = 1; i < numberOfFileDescriptors; i++) {
-            bool closeConnection = false;
 
-            /*Sprawdzanie czy wystąpiły błędy */
-            if (fileDescriptorsArray[i].revents & POLLERR) {
-                printf("socket error, closing connection...\n");
-                closeConnection = true;
 
-            } else if (fileDescriptorsArray[i].revents & POLLIN) {
-                /*
-                 * KODY ZAPYTAN (zakończone znakiem \n na końcu)
-                 * 0 - ponow poprzendia wiadomosc
-                 * 1 - podaj wolne miejsca
-                 * 2xy - zajmnij wskazane miejsce (x - gra, y - miejsce)
-                 * 3k - rusz się w podanym kierunku
-                 * 4 - zapytaj o ruch przeciwnika
-                 * 5 - opusc stolik
-                 *
-                 *
-                 * KODY ODPOWIEDZI (zakończone znakiem \n na końcu)
-                 *  poczatek 0 - udało się zrealizować
-                 *  początek 1 - błąd
-                 * 1 - wolne miejsca a następnie ciąg 01110 itp zajętości miejsc
-                 * 2 - udało się zająć miejsce
-                 * 3 - udało się ruszyć we wskazanym kierunku
-                 * 4k - przeciwnik ruszył się w kierunku k. Nastepnie:0 - twoj ruch, 1 wygrales, 2 -przegrales
-                 * 5 - udalo sie opuscic stolik
-                 */
+            /*akceptowanie nowych połączeń*/
+            if (fileDescriptorsArray[0].revents & POLLIN) {
+                acceptNewConnection(nSocket);
+            }
 
-                //printf("POLLIN from %d \n",i);
+            for (int i = 1; i < numberOfFileDescriptors; i++) {
 
-                char bufforIn[BUFFER_INCOMING_SIZE];
-                ssize_t odp = 0;
-                odp = read(fileDescriptorsArray[i].fd, bufforIn, BUFFER_INCOMING_SIZE );
-                if(odp == 0){
-                    //printf("Socket is closed\n");
-                    //gracz przegrał
-                }else if(odp == -1){
-                    printf("Error when reading input data from client\n");
-                    //odpowiedz wiadomością z początkiem 1 o ponowne przeslanie
-                }else{
-                    //sprawdz czy na koncu jesz znak nowej lini
-                    char messageCode = bufforIn[0];
-                    if(bufforIn[odp-1] != '\n'){
-                        printf("brak znaku nowej lini na koncu komunikatu\n");
+                /*Sprawdzanie czy wystąpiły błędy */
+                if (fileDescriptorsArray[i].revents & POLLERR) {
+                    printf("socket error, closing connection...\n");
+                    closeConnection = true;
+
+                } else if (fileDescriptorsArray[i].revents & POLLIN) {
+                    closeConnection = false;
+                    /*
+                     * KODY ZAPYTAN (zakończone znakiem \n na końcu)
+                     * 0 - ponow poprzendia wiadomosc
+                     * 1 - podaj wolne miejsca
+                     * 2xy - zajmnij wskazane miejsce (x - gra, y - miejsce)
+                     * 3k - rusz się w podanym kierunku
+                     * 4 - zapytaj o ruch przeciwnika
+                     * 5 - opusc stolik
+                     *
+                     *
+                     * KODY ODPOWIEDZI (zakończone znakiem \n na końcu)
+                     *  poczatek 0 - udało się zrealizować
+                     *  początek 1 - błąd
+                     * 1 - wolne miejsca a następnie ciąg 01110 itp zajętości miejsc
+                     * 2 - udało się zająć miejsce
+                     * 3 - udało się ruszyć we wskazanym kierunku
+                     * 4k - przeciwnik ruszył się w kierunku k. Nastepnie:0 - twoj ruch, 1 wygrales, 2 -przegrales
+                     * 5 - udalo sie opuscic stolik
+                     */
+
+                    //printf("POLLIN from %d \n",i);
+
+                    char bufforIn[BUFFER_INCOMING_SIZE];
+                    int odp = 0;
+//                odp = read(fileDescriptorsArray[i].fd, bufforIn, BUFFER_INCOMING_SIZE );
+                    while ((odp = read(fileDescriptorsArray[i].fd, bufforIn, BUFFER_INCOMING_SIZE)) > 0)
+                        write(1, bufforIn, odp);
+
+                    /*Zamykamy połączenie*/
+                    if (odp == 0) {
+                        printf("Socket is closed\n");
+                        closeConnection = true;
+
                     }
-                    if (messageCode == 0){
-                        printf("zero");
-                    }else if (messageCode == 1){
-                        printf("jeden");
-                    }else if (messageCode == 2){
-                        printf("dwa");
-                    }else if (messageCode == 3){
-                        printf("trzy");
-                    }else if (messageCode == 4){
-                        printf("cztery");
-                    }else if (messageCode == 5){
-                        printf("pięć1");
+                    if (odp == -1) {
+                        printf("Error when reading input data from client\n");
+                        //odpowiedz wiadomością z początkiem 1 o ponowne przeslanie
+                    } else {
+                        //sprawdz czy na koncu jesz znak nowej lini
+                        char messageCode = bufforIn[0];
+                        printf("Odczytano: %d znakow\n", odp);
+                        for (int j = 0; j < odp; ++j) {
+                            printf("%c", bufforIn[j]);
+                        }
+                        printf("\n");
+                        if (bufforIn[odp - 1] != '\n') {
+                            printf("brak znaku nowej lini na koncu komunikatu\n");
+                            printf("znak na koncu: <%c>", bufforIn[odp - 1]);
+                        }
+                        if (messageCode == '0') {
+                            printf("zero");
+                        } else if (messageCode == '1') {
+                            printf("jeden");
+                        } else if (messageCode == '2') {
+                            printf("dwa");
+                        } else if (messageCode == '3') {
+                            printf("trzy");
+                        } else if (messageCode == '4') {
+                            printf("cztery");
+                        } else if (messageCode == '5') {
+                            printf("pięć1");
+                        }
                     }
+
+
+                }
+                if (closeConnection){
+                    close(fileDescriptorsArray[i].fd);
+                    fileDescriptorsArray[i].fd = -1;
+                    compressArray = true;
                 }
 
+            }
 
-
+            if (compressArray)
+            {
+                compressArray = false;
+                for (int i = 0; i < numberOfFileDescriptors; i++)
+                {
+                    if (fileDescriptorsArray[i].fd == -1)
+                    {
+                        for(int j = i; j < numberOfFileDescriptors; j++)
+                        {
+                            fileDescriptorsArray[j].fd = fileDescriptorsArray[j+1].fd;
+                        }
+                        i--;
+                        numberOfFileDescriptors--;
+                    }
+                }
             }
 
 
         }
+
+
     }
 }
 
