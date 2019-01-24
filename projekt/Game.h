@@ -30,15 +30,23 @@ private:
 
 public:
     bool isPlayer1SeatOccupied();
+
     bool isPlayer2SeatOccupied();
+
     bool isGameInProgress();
 
     int takePlayer1Seat(int playerIndex);
+
     int takePlayer2Seat(int playerIndex);
 
     void preparePossibleMovesToGame();
 
+    int moveBall(int direction);
 
+    bool isPossibleReflectionOn();
+
+    //0 nastepny ruch, 1 wygrana, -1 przegrana
+    int resultOfMoves(int playerNo);
 
 };
 
