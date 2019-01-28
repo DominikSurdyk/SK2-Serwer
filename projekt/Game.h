@@ -25,13 +25,15 @@ private:
     bool possibleMoves[9][13][8];
     int actualBallPositionX = 4;
     int actualBallPositionY = 6;
-    int player1Index = -1;
-    int player2Index = -1;
+    int player1Id = -1;
+    int player2Id = -1;
 
 public:
     bool isPlayer1SeatOccupied();
 
     bool isPlayer2SeatOccupied();
+
+
 
     bool isGameInProgress();
 
@@ -39,14 +41,25 @@ public:
 
     int takePlayer2Seat(int playerIndex);
 
+    int takePlayerSeat(int seatNo, int playerIndex);
+
+    void freePlayerSeat(int seatNo);
+
+    int playerIdOnSelectedSeat(int seatNo);
+
     void preparePossibleMovesToGame();
 
-    int moveBall(int direction);
+    int moveBall(char direction);
 
     bool isPossibleReflectionOn();
 
-    //0 nastepny ruch, 1 wygrana, -1 przegrana
-    int resultOfMoves(int playerNo);
+    bool isBallStuck();
+
+    bool isBallInGate(int gateNo);
+
+    bool isPlayerWin(int playerNo);
+
+    bool isPlayerLoose(int playerNo);
 
 };
 
