@@ -8,11 +8,7 @@
 
 class Game {
 private:
-    /** jest to mapa pokazujaca wszystkie mozliwe polaczenia
-     * 0 - x
-     * 1 - y
-     * 2 - kierunki w ktorych mozna wykonac ruch z danego pkt. 1(true) 0ZNACZA MOZLIWY RUCH, 0(false) OZNACZA BRAK RUCHU
-     *
+    /**
      * OZNACZENIA KIERUNKOW
      * 0 - GORA
      * 1 - UKOS GORA-PRAWO
@@ -22,7 +18,7 @@ private:
      * 5 - UKOS DOL-LEWO
      * 6 - LEWO
      * 7 - UKOS LEWO-GORA**/
-    bool possibleMoves[9][13][8];
+    bool allowedMoves[9][13][8];
     int currentBallPositionX = 4;
     int currentBallPositionY = 6;
     int player1Id = -1;
