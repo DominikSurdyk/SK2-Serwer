@@ -14,41 +14,17 @@ bool Game::isPlayer2SeatOccupied() {
 }
 
 bool Game::isGameInProgress() {
-    return player1Id < 0 && player2Id < 0;
+    return gameStarted;
 }
 
-int Game::takePlayer1Seat(int playerIndex) {
-    if (player1Id <= 0) {
-        player1Id = playerIndex;
-        return 0;
-    } else {
-        return -1;
-    }
-}
-
-int Game::takePlayer2Seat(int playerIndex) {
-    if (player2Id <= 0) {
-        player2Id = playerIndex;
-        return 0;
-    } else {
-        return -1;
-    }
-}
-
-int Game::takePlayerSeat(int seatNo, int playerId) {
+void Game::takePlayerSeat(int seatNo, int playerId) {
     if (seatNo == 0) {
         if (player1Id <= 0) {
             player1Id = playerId;
-            return 0;
-        } else {
-            return -1;
         }
     } else {
         if (player2Id <= 0) {
             player2Id = playerId;
-            return 0;
-        } else {
-            return -1;
         }
     }
 }
@@ -158,87 +134,77 @@ void Game::preparePossibleMovesToGame() {
 
 }
 
-int Game::moveBall(char direction) {
-    printf("ruch pilki: %c\n", direction);
-
+int Game::moveBall(char directionType) {
+    unsigned char direction = (unsigned char) directionType;
+    printf("ruch pilki: %c\n", directionType);
     //gora
     if (direction == '0') {
-        possibleMoves[actualBallPositionX][actualBallPositionY][direction] = false;
-        possibleMoves[actualBallPositionX][actualBallPositionY - 1][(direction + 4) % 8] = false;
-        actualBallPositionY--;
+        possibleMoves[currentBallPositionX][currentBallPositionY][direction] = false;
+        possibleMoves[currentBallPositionX][currentBallPositionY - 1][(direction + 4) % 8] = false;
+        currentBallPositionY--;
         return 1;
     }
     //gora-prawo
     if (direction == '1') {
-        possibleMoves[actualBallPositionX][actualBallPositionY][direction] = false;
-        possibleMoves[actualBallPositionX + 1][actualBallPositionY - 1][(direction + 4) % 8] = false;
-        actualBallPositionY--;
-        actualBallPositionX++;
+        possibleMoves[currentBallPositionX][currentBallPositionY][direction] = false;
+        possibleMoves[currentBallPositionX + 1][currentBallPositionY - 1][(direction + 4) % 8] = false;
+        currentBallPositionY--;
+        currentBallPositionX++;
         return 1;
     }
     //prawo
     if (direction == '2') {
-        possibleMoves[actualBallPositionX][actualBallPositionY][direction] = false;
-        possibleMoves[actualBallPositionX + 1][actualBallPositionY][(direction + 4) % 8] = false;
-        actualBallPositionX++;
+        possibleMoves[currentBallPositionX][currentBallPositionY][direction] = false;
+        possibleMoves[currentBallPositionX + 1][currentBallPositionY][(direction + 4) % 8] = false;
+        currentBallPositionX++;
         return 1;
     }
     //dol-prawo
     if (direction == '3') {
-        possibleMoves[actualBallPositionX][actualBallPositionY][direction] = false;
-        possibleMoves[actualBallPositionX + 1][actualBallPositionY + 1][(direction + 4) % 8] = false;
-        actualBallPositionX++;
-        actualBallPositionY++;
+        possibleMoves[currentBallPositionX][currentBallPositionY][direction] = false;
+        possibleMoves[currentBallPositionX + 1][currentBallPositionY + 1][(direction + 4) % 8] = false;
+        currentBallPositionX++;
+        currentBallPositionY++;
         return 1;
     }
     //dol
     if (direction == '4') {
-        possibleMoves[actualBallPositionX][actualBallPositionY][direction] = false;
-        possibleMoves[actualBallPositionX][actualBallPositionY + 1][(direction + 4) % 8] = false;
-        actualBallPositionY++;
+        possibleMoves[currentBallPositionX][currentBallPositionY][direction] = false;
+        possibleMoves[currentBallPositionX][currentBallPositionY + 1][(direction + 4) % 8] = false;
+        currentBallPositionY++;
         return 1;
     }
     //dol-lewo
     if (direction == '5') {
-        possibleMoves[actualBallPositionX][actualBallPositionY][direction] = false;
-        possibleMoves[actualBallPositionX - 1][actualBallPositionY + 1][(direction + 4) % 8] = false;
-        actualBallPositionY++;
-        actualBallPositionX--;
+        possibleMoves[currentBallPositionX][currentBallPositionY][direction] = false;
+        possibleMoves[currentBallPositionX - 1][currentBallPositionY + 1][(direction + 4) % 8] = false;
+        currentBallPositionY++;
+        currentBallPositionX--;
         return 1;
     }
     //lewo
     if (direction == '6') {
-        possibleMoves[actualBallPositionX][actualBallPositionY][direction] = false;
-        possibleMoves[actualBallPositionX - 1][actualBallPositionY][(direction + 4) % 8] = false;
-        actualBallPositionX--;
+        possibleMoves[currentBallPositionX][currentBallPositionY][direction] = false;
+        possibleMoves[currentBallPositionX - 1][currentBallPositionY][(direction + 4) % 8] = false;
+        currentBallPositionX--;
         return 1;
     }
     //lewo-gora
     if (direction == '7') {
-        possibleMoves[actualBallPositionX][actualBallPositionY][direction] = false;
-        possibleMoves[actualBallPositionX - 1][actualBallPositionY - 1][(direction + 4) % 8] = false;
-        actualBallPositionX--;
-        actualBallPositionY--;
+        possibleMoves[currentBallPositionX][currentBallPositionY][direction] = false;
+        possibleMoves[currentBallPositionX - 1][currentBallPositionY - 1][(direction + 4) % 8] = false;
+        currentBallPositionX--;
+        currentBallPositionY--;
         return 1;
     }
     return -1;
 
 }
 
-bool Game::isPossibleReflectionOn() {
-    int count = 0;
-    for (int i = 0; i < 8; ++i) {
-        if (!possibleMoves[actualBallPositionX][actualBallPositionY][i]) {
-            count++;
-        }
-    }
-    return count > 1;
-}
-
 bool Game::isBallStuck() {
     int count = 0;
     for (int i = 0; i < 8; i++) {
-        if (!possibleMoves[actualBallPositionX][actualBallPositionY][i]) {
+        if (!possibleMoves[currentBallPositionX][currentBallPositionY][i]) {
             count++;
         }
     }
@@ -248,24 +214,29 @@ bool Game::isBallStuck() {
 
 bool Game::isBallInGate(int gateNo) {
     if (gateNo == 0) {
-        if ((actualBallPositionX == 3 || actualBallPositionX == 4 || actualBallPositionX == 5) &&
-            actualBallPositionY == 0) {
+        if ((currentBallPositionX == 3 || currentBallPositionX == 4 || currentBallPositionX == 5) &&
+            currentBallPositionY == 0) {
             return true;
         } else {
             return false;
         }
-    } else if ((actualBallPositionX == 3 || actualBallPositionX == 4 || actualBallPositionX == 5) &&
-               actualBallPositionY == 12) {
+    } else if ((currentBallPositionX == 3 || currentBallPositionX == 4 || currentBallPositionX == 5) &&
+               currentBallPositionY == 12) {
         return true;
     } else {
         return false;
     }
 }
 
-bool Game::isPlayerWin(int playerNo) {
-
+void Game::startGame() {
+    gameStarted = true;
 }
 
-bool Game::isPlayerLoose(int playerNo) {
-
+void Game::resetGame() {
+    gameStarted = false;
+    player1Id = -1;
+    player2Id = -1;
+    preparePossibleMovesToGame();
+    currentBallPositionX = 4;
+    currentBallPositionY = 6;
 }

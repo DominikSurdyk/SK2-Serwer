@@ -23,25 +23,20 @@ private:
      * 6 - LEWO
      * 7 - UKOS LEWO-GORA**/
     bool possibleMoves[9][13][8];
-    int actualBallPositionX = 4;
-    int actualBallPositionY = 6;
+    int currentBallPositionX = 4;
+    int currentBallPositionY = 6;
     int player1Id = -1;
     int player2Id = -1;
+    bool gameStarted = false;
 
 public:
     bool isPlayer1SeatOccupied();
 
     bool isPlayer2SeatOccupied();
 
-
-
     bool isGameInProgress();
 
-    int takePlayer1Seat(int playerIndex);
-
-    int takePlayer2Seat(int playerIndex);
-
-    int takePlayerSeat(int seatNo, int playerIndex);
+    void takePlayerSeat(int seatNo, int playerIndex);
 
     void freePlayerSeat(int seatNo);
 
@@ -51,15 +46,13 @@ public:
 
     int moveBall(char direction);
 
-    bool isPossibleReflectionOn();
-
     bool isBallStuck();
 
     bool isBallInGate(int gateNo);
 
-    bool isPlayerWin(int playerNo);
+    void startGame();
 
-    bool isPlayerLoose(int playerNo);
+    void resetGame();
 
 };
 

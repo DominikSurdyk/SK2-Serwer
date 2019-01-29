@@ -17,17 +17,15 @@
 
 using namespace std;
 
-
-#define SERVER_PORT 1234
 #define QUEUE_SIZE 15
 #define MAX_FDS 1000
 #define GAMES_AMOUNT 3
-#define POLL_TIMEOUT 2000
+#define POLL_TIMEOUT 3000
 #define BUFFER_INCOMING_SIZE 20
-
+int SERVER_PORT = 1234;
 struct pollfd fileDescriptorsArray[MAX_FDS];
 int numberOfFileDescriptors = 1;
-string messagesQueue[MAX_FDS];
+string clientsMessagesQueuesArray[MAX_FDS];
 int clientsIdArray[MAX_FDS];
 Game gamesArray[GAMES_AMOUNT];
 const string MESSAGES_DELIMETER = "-";
@@ -38,7 +36,9 @@ int sendResponseToClient(int fileDescriptor, int responseCode, string message) {
     int responseLength = responseStr.length();
     char response[responseLength];
     strcpy(response, responseStr.c_str());
-    int writeResult = write(fileDescriptor, response, responseLength);
+    printf("Wysyłam: [%s]\n",responseStr.c_str());
+    int writeResult = (ssize_t) write(fileDescriptor, response, responseLength);
+    return writeResult;
 }
 
 bool acceptNewConnection(int nSocket) {
@@ -54,6 +54,7 @@ bool acceptNewConnection(int nSocket) {
     fileDescriptorsArray[numberOfFileDescriptors].events = POLLIN;
     fileDescriptorsArray[numberOfFileDescriptors].revents = 0;
     numberOfFileDescriptors++;
+    return true;
 }
 
 string getGamesSeatsStatus() {
@@ -73,22 +74,34 @@ string getGamesSeatsStatus() {
     return response;
 }
 
-void freeGameSeatByIndex(int clientId){
+void freeGameSeatByClientId(int clientId) {
     for (int i = 0; i < GAMES_AMOUNT; ++i) {
         for (int j = 0; j < 2; ++j) {
-            if(gamesArray[i].playerIdOnSelectedSeat(j) == clientId){
+            if (gamesArray[i].playerIdOnSelectedSeat(j) == clientId) {
                 gamesArray[i].freePlayerSeat(j);
-                printf("Usunieto gracza o ID: %d, ze stołu o nr: %d, i miejscu: %d\n",clientId,i,j);
-                printf("Trzeba sprawdzic czy gra sie nie toczy, jesli tak, to sprawic by drugi gracz wygral!");
+                printf("Usunieto gracza o ID: %d, ze stołu o nr: %d, i miejscu: %d\n", clientId, i, j);
+                printf("Trzeba sprawdzic czy gra sie nie toczy, jesli tak, to sprawic by drugi gracz wygral!\n");
             }
         }
     }
 }
 
-int findFileDescriptorIndexByClinetId(int cliendId){
+int findGameNoByClientId(int clientId) {
+    int result = -1;
+    for (int i = 0; i < GAMES_AMOUNT; ++i) {
+        for (int j = 0; j < 2; ++j) {
+            if (gamesArray[i].playerIdOnSelectedSeat(j) == clientId) {
+                result = i;
+            }
+        }
+    }
+    return result;
+}
+
+int findFileDescriptorIndexByClientId(int cliendId) {
     int result = -1;
     for (int i = 1; i < numberOfFileDescriptors; ++i) {
-        if (clientsIdArray[i] == cliendId){
+        if (clientsIdArray[i] == cliendId) {
             result = i;
         }
     }
@@ -99,30 +112,21 @@ int main(int argc, char *argv[]) {
     printf("Program start\n");
     /*inicjalizacja kolejek wiadomości do serwera*/
     for (int k = 0; k < MAX_FDS; ++k) {
-        messagesQueue[k] = "";
+        clientsMessagesQueuesArray[k] = "";
     }
     //inicjalizacja gier
     for (int l = 0; l < GAMES_AMOUNT; ++l) {
-        gamesArray[l].preparePossibleMovesToGame();
+        gamesArray[l].resetGame();
     }
-
+    SERVER_PORT = stoi(argv[1]);
 
     //nadawanie połaczeniom id
     int clientId = 1;
     bool compressArray = false;
 
-    int on = 1;
-
-    int current_size = 0, listen_sd = -1;
-
-    int new_sd = -1;
-
-    int nSocket, nClientSocket;
+    int nSocket;
     int nBind, nListen;
     int nFoo = 1;
-    socklen_t nTmp;
-    struct sockaddr_in stAddr, stClientAddr;
-
 
     struct sockaddr_in addr = {};
     addr.sin_family = AF_INET;
@@ -176,62 +180,54 @@ int main(int argc, char *argv[]) {
         }
 
         for (int i = 1; i < numberOfFileDescriptors; i++) {
-            bool closeConnection = false;
 
             /*Sprawdzanie czy wystąpiły błędy */
             if (fileDescriptorsArray[i].revents & POLLERR) {
                 printf("socket error, closing connection...\n");
-                closeConnection = true;
+                // fileDescriptorsArray[i].fd = -1;
 
             }
             if (fileDescriptorsArray[i].revents & POLLIN) {
-                printf("POLLIN: %d", i);
+                printf("POLLIN: %d \n", i);
                 bool endOfMessage = false;
                 /*
                  * KODY ZAPYTAN (zakończone znakiem \n na końcu)
-                 * 0 - ponow poprzendia wiadomosc
-                 * 1 - podaj wolne miejsca
+                 * 1 - podaj wolne miejsca i nadaj ID
                  * 2-ID-x - zajmnij wskazane miejsce x
                  * 3-ID-G-S-xxxxx -wykonaj ruchy, G - nr gry, S - nr miejsca - xxx ruchy
-                 * 4 - zapytaj o ruch przeciwnika
-                 * 5 - opusc stolik
-                 *
+                 * 4 - podaj same wolne miejsca
                  *
                  * KODY ODPOWIEDZI (zakończone znakiem \n na końcu)
                  * 1-ID-xxx -  nadano ID, xxx - 01110 itp zajętości miejsc
                  * 2-x - udało się zająć miejsce. x to 1 lub 0 ( 1 zaczynaj, 0 czekaj na ruch)
                  * 3-xxx - nie udalo sie zajac miejsca, xxx wolne miejsca
-                 * 4-W-xxx - przeciwnik wykonal ruchy.W status 0 - gra dalej sie toczy, -1 przegrales, 1 wygrales. xxx-ruchy
-                 * 5k - przeciwnik ruszył się w kierunku k. Nastepnie:0 - twoj ruch, 1 wygrales, 2 -przegrales
-                 * 6 - udalo sie opuscic stolik
+                 * 4-ID-GameIndex-SeatNo-xxx - przeciwnik wykonal ruchy. xxx-ruchy
+                 * 5-xxx - przesyłam status miejsc
                  */
 
 
                 char bufforIn[BUFFER_INCOMING_SIZE];
                 int odp = 0;
-                int odpAll = 0;
                 string message = "";
                 odp = read(fileDescriptorsArray[i].fd, bufforIn, BUFFER_INCOMING_SIZE);
-                //write(1, bufforIn, odp);
                 printf("---------\n");
                 for (int j = 0; j < odp; ++j) {
                     message += bufforIn[j];
                     if (bufforIn[j] == '\n') {
                         endOfMessage = true;
-                        printf("Znak końca wiadomości! -> dodaję do kolejki\n");
+                        printf("Znak końca wiadomości! -> dodaję do kolejki");
                     }
                 }
-                odpAll += odp;
-                printf("\nOdebrano : %d znakow\n", odpAll);
+                printf("\nOdebrano : %d znakow\n", odp);
                 write(1, bufforIn, odp);
 
                 string fullMessage = "";
                 if (!endOfMessage) {
                     printf("Nie odebrano całej wiadomości\n");
-                    messagesQueue[i] += message;
+                    clientsMessagesQueuesArray[i] += message;
                 } else {
-                    fullMessage = messagesQueue[i] += message;
-                    messagesQueue[i] = "";
+                    fullMessage = clientsMessagesQueuesArray[i] += message;
+                    clientsMessagesQueuesArray[i] = "";
                     printf("Cała wiadomość: %s", fullMessage.c_str());
                 }
 
@@ -240,8 +236,8 @@ int main(int argc, char *argv[]) {
                     if (messageCode == '0') {
                     } else if (messageCode == '1') {
                         printf("jeden -> Klient prosi o dostepnosc stolow, oraz nadanie Id!\n");
-                        clientsIdArray[i]= clientId;
-                        printf("Dla indeksu nr : %d w tablicy fileDescruiptorow,  nadano Id: %d!\n",i, clientId);
+                        clientsIdArray[i] = clientId;
+                        printf("Dla indeksu nr : %d w tablicy fileDescriptorow,  nadano Id: %d!\n", i, clientId);
                         string response = to_string(clientId) + "-" + getGamesSeatsStatus();
                         sendResponseToClient(fileDescriptorsArray[i].fd, 1, response);
                         clientId++;
@@ -277,10 +273,12 @@ int main(int argc, char *argv[]) {
 
                         if (!isSeatOccupied) {
                             //miejsce wolne, zajmuje miejsce
-                            int status = gamesArray[game].takePlayerSeat(gameSeat,clientIdInt);
-                            printf("zajmuje miejsce nr %d w grze nr :%d. Id klienta: %d \n",gameSeat, game,clientIdInt);
+                            gamesArray[game].takePlayerSeat(gameSeat, clientIdInt);
+                            printf("zajmuje miejsce nr %d w grze nr :%d. Id klienta: %d \n", gameSeat, game,
+                                   clientIdInt);
                             string response;
                             if (isOppositeSeatOccupied) {
+                                gamesArray[game].startGame();
                                 response = "1";
                             } else {
                                 response = "0";
@@ -289,21 +287,22 @@ int main(int argc, char *argv[]) {
 
                         } else {
                             //miejse zajete, odsylam wiadomosc o zajetosci miejsca
-                            printf("Niestety, to miejsce jest juz zajete. Odsylam nowa liste miejsc");
+                            printf("Niestety, to miejsce jest juz zajete. Odsylam nowa liste miejsc\n");
                             string response = getGamesSeatsStatus();
                             sendResponseToClient(fileDescriptorsArray[i].fd, 3, response);
                         }
                     } else if (messageCode == '3') {
-                        printf("trzy -> Przeslano ruchy");
+                        printf("trzy -> Przeslano ruchy\n");
 
-                        //wymazanie kodu wiadomosci
+                        //wyciagniecie kodu wiadomosci
                         int delimeter = fullMessage.find(MESSAGES_DELIMETER);
+                        string opponentResponseStatus = fullMessage.substr(0, delimeter);
                         fullMessage.erase(0, delimeter + 1);
+                        int opponentResponseStatusInt = stoi(opponentResponseStatus);
 
                         //wyciagniecie ID klienta
                         delimeter = fullMessage.find(MESSAGES_DELIMETER);
                         string clientId = fullMessage.substr(0, delimeter);
-                        int clientIdInt = stoi(clientId);
 
                         //wyciagniecie nr gry
                         fullMessage.erase(0, delimeter + 1);
@@ -319,68 +318,96 @@ int main(int argc, char *argv[]) {
 
                         //ostatnie
                         fullMessage.erase(0, delimeter + 1);
-                        string moves = fullMessage.substr(0, fullMessage.length()-1);
+                        string moves = fullMessage.substr(0, fullMessage.length() - 1);
                         printf("PRZETWORZONE\n");
-                        printf("Id: %s\n",clientId.c_str());
-                        printf("Nr gry: %s\n",gameNo.c_str());
+                        printf("Status: %d\n", opponentResponseStatusInt);
+                        printf("Id: %s\n", clientId.c_str());
+                        printf("Nr gry: %s\n", gameNo.c_str());
                         printf("Nr miejsca: %s\n", seatNo.c_str());
                         printf("Ruchy: %s\n", moves.c_str());
-                        printf("Ruchy dlugosc: %d\n", (int)moves.length());
+                        printf("Ruchy dlugosc: %d\n", (int) moves.length());
 
-
+                        bool resetGame = false;
                         //wrzucenie wyniku na serwer
-                        for (int j = 0; j < moves.length(); ++j) {
+                        for (unsigned int j = 0; j < moves.length(); ++j) {
                             gamesArray[gameNoInt].moveBall(moves[j]);
                         }
-                        //sprawdzam cyz gra utknela, jesli tak to drugi klient wygral
-
-                        if(gamesArray[gameNoInt].isBallInGate(seatNoInt)){
-                            printf("Pilka w bramce nadsylajacego, przegrana!\n");
-                        }
-                        if (gamesArray[gameNoInt].isBallInGate((seatNoInt+1)%1)){
-                            printf("Pilka w bramce przeciwnika nadsylajacego, wygrana!\n");
-                        }
-                        if(gamesArray[gameNoInt].isBallStuck()){
-                            printf("Brak ruchow, przegrana!\n");
-                        }else{
+                        //sprawdzam czy gra utknela, jesli tak to drugi klient wygral
+                        string responseToNextPlayer;
+                        if (gamesArray[gameNoInt].isBallInGate(seatNoInt)) {
+                            printf("Pilka w bramce nadsylajacego. Wygrana nastepnego gracza!\n");
+                            responseToNextPlayer = "1-";
+                            resetGame = true;
+                        }else if (gamesArray[gameNoInt].isBallInGate((seatNoInt + 1) % 1)) {
+                            printf("Pilka w bramce przeciwnika nadsylajacego. Przegrana nastepnego gracza!!\n");
+                            responseToNextPlayer = "2-";
+                            resetGame = true;
+                        }else if (gamesArray[gameNoInt].isBallStuck()) {
+                            printf("Brak ruchow. Wygrana nastepnego gracza!\n");
+                            responseToNextPlayer = "1-";
+                            resetGame = true;
+                        } else {
                             printf("Gra toczy sie dalej\n");
+                            responseToNextPlayer = "0-";
                         }
-                            string response = "0-" + moves;
-                            int oppositeClientId = gamesArray[gameNoInt].playerIdOnSelectedSeat((seatNoInt+1)%2);
-                            int oppositeClientFileDescriptor = findFileDescriptorIndexByClinetId(oppositeClientId);
-                            printf("Wysylam odpowiedz do klienta o ID: %d\n", oppositeClientId);
-                            if (oppositeClientFileDescriptor != -1){
-                                sendResponseToClient(fileDescriptorsArray[oppositeClientFileDescriptor].fd,4,response);
-                            }else{
-                                printf("Blad w znajdowaniu odpowiedniego fileDescryptora");
-                            }
+                        responseToNextPlayer += moves;
+                        int oppositeClientId = gamesArray[gameNoInt].playerIdOnSelectedSeat((seatNoInt + 1) % 2);
+                        int oppositeClientFileDescriptor = findFileDescriptorIndexByClientId(oppositeClientId);
+                        printf("Wysylam odpowiedz do klienta o ID: %d\n", oppositeClientId);
+                        if (oppositeClientFileDescriptor != -1) {
+                            sendResponseToClient(fileDescriptorsArray[oppositeClientFileDescriptor].fd, 4,
+                                                 responseToNextPlayer);
+                        } else {
+                            printf("Blad w znajdowaniu odpowiedniego fileDescryptora");
+                        }
 
-
-
+                        if (resetGame) {
+                            gamesArray[gameNoInt].resetGame();
+                            printf("Gra zakończona. Resetuję stan gry!\n");
+                        }
                     } else if (messageCode == '4') {
-                        printf("cztery");
-                    } else if (messageCode == '5') {
-                        printf("pięć1");
+                        printf("CZTERY -> klient skończył grę, i prosi o podanie wolnych miejsc");
+                        string response = getGamesSeatsStatus();
+                        sendResponseToClient(fileDescriptorsArray[i].fd, 5, response);
                     }
                 }
 
 
                 if (odp == 0) {
-                    printf("Socket nr:%d is closed\n", i);
+                    printf("Socket nr:%d jest zamkniety\n", i);
                     printf("Trzeba zamknac gra jezeli gracz jest w trakcie gry!\n");
                     fileDescriptorsArray[i].fd = -1;
                     compressArray = true;
                     close(fileDescriptorsArray[i].fd);
-                    freeGameSeatByIndex(clientsIdArray[i]);
-                    //gracz przegrał
+
+                    /*jeśli sa dwaj gracze to znaczy ze gra jest juz rozpoczeta.
+                     * Gracz ktory sie rozlacza przegrywa, a komunikat zostaje wyslany do drugiego gracza.
+                     * Gra nastepnie jest resetowana
+                     */
+                    int gameNo = findGameNoByClientId(clientsIdArray[i]);
+
+                    if (gamesArray[gameNo].isGameInProgress() &&
+                        !gamesArray[gameNo].isBallInGate(0) &&
+                        !gamesArray[gameNo].isBallInGate(1) &&
+                        !gamesArray[gameNo].isBallStuck()) {
+
+                        int playerId = gamesArray[gameNo].playerIdOnSelectedSeat(0);
+                        if (clientsIdArray[i] == playerId) {
+                            playerId = gamesArray[gameNo].playerIdOnSelectedSeat(1);
+                        }
+                        int playerFileDecriptor = findFileDescriptorIndexByClientId(playerId);
+                        printf("zamykam gre nr: %d. Gracz o ID: %d, sie rozlaczyl\n", gameNo, playerId % 2);
+                        sendResponseToClient(fileDescriptorsArray[playerFileDecriptor].fd, 0, "koniec");
+                        gamesArray[gameNo].resetGame();
+                    }
+
+                    //uwolnij miejsce
+                    printf("Gracz odszedł od stołu. Zwalniam jego miejsce!\n");
+                    freeGameSeatByClientId(clientsIdArray[i]);
                 } else if (odp == -1) {
                     printf("Error when reading input data from client\n");
-                    //odpowiedz wiadomością z początkiem 1 o ponowne przeslanie
                 }
-
             }
-
-
         }
 
         if (compressArray) {
@@ -390,8 +417,8 @@ int main(int argc, char *argv[]) {
                     printf("Usuwam z tablicy fileDescriptor nr %d, wszystkie nastepne indeksy maja zmniejszone indeksy!\n",
                            i);
                     for (int j = i; j < numberOfFileDescriptors; j++) {
-                        clientsIdArray[j] = clientsIdArray[j+1];
-                        messagesQueue[j] = messagesQueue[j + 1];
+                        clientsIdArray[j] = clientsIdArray[j + 1];
+                        clientsMessagesQueuesArray[j] = clientsMessagesQueuesArray[j + 1];
                         fileDescriptorsArray[j].fd = fileDescriptorsArray[j + 1].fd;
                     }
                     i--;
